@@ -117,90 +117,313 @@ mkdir -p "$CLAUDE_DIR"/{skills,agents,commands,hooks}
 echo -e "${GREEN}✓${NC} Directories created"
 
 echo
-echo -e "${BLUE}→ Installing toolkit components...${NC}"
+echo -e "${BLUE}→ Installation options...${NC}"
+echo -e "How would you like to install components?"
+echo -e "  ${GREEN}1${NC}) Install all (recommended)"
+echo -e "  ${GREEN}2${NC}) Select by folder"
+echo -e "  ${GREEN}3${NC}) Skip installation"
+echo -n "Choice [1-3]: "
+read -r install_choice
 
-# Copy skills
-if [ -d "$SCRIPT_DIR/skills" ]; then
-    cp -r "$SCRIPT_DIR/skills/"* "$CLAUDE_DIR/skills/" 2>/dev/null || true
-    SKILL_COUNT=$(find "$SCRIPT_DIR/skills" -name "SKILL.md" | wc -l)
-    echo -e "${GREEN}✓${NC} Installed $SKILL_COUNT skills"
-fi
+if [[ "$install_choice" == "3" ]]; then
+    echo -e "${YELLOW}⚠${NC} Skipping component installation"
+elif [[ "$install_choice" =~ ^[12]$ ]]; then
 
-# Copy agents
-if [ -d "$SCRIPT_DIR/agents" ]; then
-    cp "$SCRIPT_DIR/agents/"*.md "$CLAUDE_DIR/agents/" 2>/dev/null || true
-    AGENT_COUNT=$(find "$SCRIPT_DIR/agents" -name "*.md" -not -name "README.md" | wc -l)
-    echo -e "${GREEN}✓${NC} Installed $AGENT_COUNT agents"
-fi
-
-# Copy commands
-if [ -d "$SCRIPT_DIR/commands" ]; then
-    cp "$SCRIPT_DIR/commands/"*.md "$CLAUDE_DIR/commands/" 2>/dev/null || true
-    COMMAND_COUNT=$(find "$SCRIPT_DIR/commands" -name "*.md" -not -name "README.md" | wc -l)
-    echo -e "${GREEN}✓${NC} Installed $COMMAND_COUNT commands"
-fi
-
-# Copy hooks configuration
-if [ -f "$SCRIPT_DIR/hooks.json" ]; then
-    if [ -f "$CLAUDE_DIR/hooks.json" ]; then
-        echo -e "${YELLOW}⚠${NC} hooks.json already exists. Backup to hooks.json.bak? (y/n)"
-        read -r response
-        if [[ "$response" =~ ^[Yy]$ ]]; then
-            cp "$CLAUDE_DIR/hooks.json" "$CLAUDE_DIR/hooks.json.bak"
-            echo -e "${GREEN}✓${NC} Backed up existing hooks.json"
+    # Function to copy skills
+    copy_skills() {
+        local mode="$1"
+        if [ ! -d "$SCRIPT_DIR/skills" ]; then
+            echo -e "${YELLOW}⚠${NC} No skills directory found"
+            return
         fi
-    fi
-    cp "$SCRIPT_DIR/hooks.json" "$CLAUDE_DIR/hooks.json"
-    echo -e "${GREEN}✓${NC} Installed hooks configuration"
-fi
 
-# Copy hook scripts
-if [ -d "$SCRIPT_DIR/hooks" ]; then
-    cp "$SCRIPT_DIR/hooks/"*.sh "$CLAUDE_DIR/hooks/" 2>/dev/null || true
-    chmod +x "$CLAUDE_DIR/hooks/"*.sh 2>/dev/null || true
-    HOOK_COUNT=$(find "$SCRIPT_DIR/hooks" -name "*.sh" | wc -l)
-    echo -e "${GREEN}✓${NC} Installed $HOOK_COUNT hook scripts"
-fi
+        if [ "$mode" == "all" ]; then
+            local skill_dirs=($(find "$SCRIPT_DIR/skills" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null))
+            for skill in "${skill_dirs[@]}"; do
+                # Delete existing skill folder if it exists
+                if [ -d "$CLAUDE_DIR/skills/$skill" ]; then
+                    rm -rf "$CLAUDE_DIR/skills/$skill"
+                fi
+                cp -r "$SCRIPT_DIR/skills/$skill" "$CLAUDE_DIR/skills/"
+            done
+            SKILL_COUNT=${#skill_dirs[@]}
+            echo -e "${GREEN}✓${NC} Installed $SKILL_COUNT skills"
+        else
+            local skill_dirs=($(find "$SCRIPT_DIR/skills" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort))
+            if [ ${#skill_dirs[@]} -eq 0 ]; then
+                echo -e "${YELLOW}⚠${NC} No skills found"
+                return
+            fi
+            echo -e "${DIM}Found ${#skill_dirs[@]} skills: ${skill_dirs[*]}${NC}"
+            local copied=0
+            for skill in "${skill_dirs[@]}"; do
+                echo -n "  Copy $skill? (y/n): "
+                read -r response
+                if [[ "$response" =~ ^[Yy]$ ]]; then
+                    # Delete existing skill folder if it exists
+                    if [ -d "$CLAUDE_DIR/skills/$skill" ]; then
+                        rm -rf "$CLAUDE_DIR/skills/$skill"
+                    fi
+                    cp -r "$SCRIPT_DIR/skills/$skill" "$CLAUDE_DIR/skills/"
+                    echo -e "  ${GREEN}✓${NC} $skill"
+                    ((copied++))
+                fi
+            done
+            echo -e "${GREEN}✓${NC} Installed $copied of ${#skill_dirs[@]} skills"
+        fi
+    }
 
-# Copy statusline
-if [ -f "$SCRIPT_DIR/statusline.sh" ]; then
-    cp "$SCRIPT_DIR/statusline.sh" "$CLAUDE_DIR/statusline.sh"
-    chmod +x "$CLAUDE_DIR/statusline.sh"
-    echo -e "${GREEN}✓${NC} Installed statusline.sh"
-fi
+    # Function to copy agents
+    copy_agents() {
+        local mode="$1"
+        if [ ! -d "$SCRIPT_DIR/agents" ]; then
+            echo -e "${YELLOW}⚠${NC} No agents directory found"
+            return
+        fi
 
-echo
-echo -e "${BLUE}→ Checking settings...${NC}"
+        if [ "$mode" == "all" ]; then
+            cp "$SCRIPT_DIR/agents/"*.md "$CLAUDE_DIR/agents/" 2>/dev/null || true
+            AGENT_COUNT=$(find "$SCRIPT_DIR/agents" -name "*.md" -not -name "README.md" 2>/dev/null | wc -l | tr -d ' ')
+            echo -e "${GREEN}✓${NC} Installed $AGENT_COUNT agents"
+        else
+            local agents=($(find "$SCRIPT_DIR/agents" -name "*.md" -not -name "README.md" -exec basename {} \; 2>/dev/null | sort))
+            if [ ${#agents[@]} -eq 0 ]; then
+                echo -e "${YELLOW}⚠${NC} No agents found"
+                return
+            fi
+            echo -e "${DIM}Found ${#agents[@]} agents: ${agents[*]%.md}${NC}"
+            local copied=0
+            for agent in "${agents[@]}"; do
+                echo -n "  Copy ${agent%.md}? (y/n): "
+                read -r response
+                if [[ "$response" =~ ^[Yy]$ ]]; then
+                    cp "$SCRIPT_DIR/agents/$agent" "$CLAUDE_DIR/agents/$agent"
+                    echo -e "  ${GREEN}✓${NC} ${agent%.md}"
+                    ((copied++))
+                fi
+            done
+            echo -e "${GREEN}✓${NC} Installed $copied of ${#agents[@]} agents"
+        fi
+    }
 
-# Check if settings.json exists and configure statusline
-SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-if [ ! -f "$SETTINGS_FILE" ]; then
-    echo -e "${BLUE}Create settings.json with statusline enabled? (y/n)${NC}"
-    read -r response
-    if [[ "$response" =~ ^[Yy]$ ]]; then
-        cat > "$SETTINGS_FILE" << 'EOF'
-{
-  "statusLine": {
-    "type": "command",
-    "command": "~/.claude/statusline.sh"
-  }
-}
-EOF
-        echo -e "${GREEN}✓${NC} Created settings.json with statusline enabled"
+    # Function to copy commands
+    copy_commands() {
+        local mode="$1"
+        if [ ! -d "$SCRIPT_DIR/commands" ]; then
+            echo -e "${YELLOW}⚠${NC} No commands directory found"
+            return
+        fi
+
+        if [ "$mode" == "all" ]; then
+            cp "$SCRIPT_DIR/commands/"*.md "$CLAUDE_DIR/commands/" 2>/dev/null || true
+            COMMAND_COUNT=$(find "$SCRIPT_DIR/commands" -name "*.md" -not -name "README.md" 2>/dev/null | wc -l | tr -d ' ')
+            echo -e "${GREEN}✓${NC} Installed $COMMAND_COUNT commands"
+        else
+            local commands=($(find "$SCRIPT_DIR/commands" -name "*.md" -not -name "README.md" -exec basename {} \; 2>/dev/null | sort))
+            if [ ${#commands[@]} -eq 0 ]; then
+                echo -e "${YELLOW}⚠${NC} No commands found"
+                return
+            fi
+            echo -e "${DIM}Found ${#commands[@]} commands: ${commands[*]%.md}${NC}"
+            local copied=0
+            for cmd in "${commands[@]}"; do
+                echo -n "  Copy ${cmd%.md}? (y/n): "
+                read -r response
+                if [[ "$response" =~ ^[Yy]$ ]]; then
+                    cp "$SCRIPT_DIR/commands/$cmd" "$CLAUDE_DIR/commands/$cmd"
+                    echo -e "  ${GREEN}✓${NC} ${cmd%.md}"
+                    ((copied++))
+                fi
+            done
+            echo -e "${GREEN}✓${NC} Installed $copied of ${#commands[@]} commands"
+        fi
+    }
+
+    # Function to copy hooks
+    copy_hooks() {
+        local mode="$1"
+        local copied=0
+        local total=0
+
+        # Copy hooks.json
+        if [ -f "$SCRIPT_DIR/hooks.json" ]; then
+            ((total++))
+            local should_copy="n"
+            if [ "$mode" == "all" ]; then
+                should_copy="y"
+            else
+                echo -n "  Copy hooks.json? (y/n): "
+                read -r should_copy
+            fi
+
+            if [[ "$should_copy" =~ ^[Yy]$ ]]; then
+                if [ -f "$CLAUDE_DIR/hooks.json" ]; then
+                    cp "$CLAUDE_DIR/hooks.json" "$CLAUDE_DIR/hooks.json.bak" 2>/dev/null
+                    echo -e "  ${BLUE}ℹ${NC} Backed up existing hooks.json"
+                fi
+                cp "$SCRIPT_DIR/hooks.json" "$CLAUDE_DIR/hooks.json"
+                echo -e "  ${GREEN}✓${NC} hooks.json"
+                ((copied++))
+            fi
+        fi
+
+        # Copy hook scripts
+        if [ -d "$SCRIPT_DIR/hooks" ]; then
+            local hook_files=($(find "$SCRIPT_DIR/hooks" -name "*.sh" -exec basename {} \; 2>/dev/null | sort))
+            total=$((total + ${#hook_files[@]}))
+
+            if [ ${#hook_files[@]} -gt 0 ]; then
+                if [ "$mode" == "all" ]; then
+                    cp "$SCRIPT_DIR/hooks/"*.sh "$CLAUDE_DIR/hooks/" 2>/dev/null || true
+                    chmod +x "$CLAUDE_DIR/hooks/"*.sh 2>/dev/null || true
+                    copied=$((copied + ${#hook_files[@]}))
+                    echo -e "${GREEN}✓${NC} Installed ${#hook_files[@]} hook scripts"
+                    return
+                else
+                    echo -e "${DIM}Found ${#hook_files[@]} hook scripts: ${hook_files[*]%.sh}${NC}"
+                    for hook in "${hook_files[@]}"; do
+                        echo -n "  Copy ${hook%.sh}? (y/n): "
+                        read -r response
+                        if [[ "$response" =~ ^[Yy]$ ]]; then
+                            cp "$SCRIPT_DIR/hooks/$hook" "$CLAUDE_DIR/hooks/$hook"
+                            chmod +x "$CLAUDE_DIR/hooks/$hook"
+                            echo -e "  ${GREEN}✓${NC} ${hook%.sh}"
+                            ((copied++))
+                        fi
+                    done
+                fi
+            fi
+        fi
+
+        if [ "$mode" != "all" ] && [ $total -gt 0 ]; then
+            echo -e "${GREEN}✓${NC} Installed $copied of $total hook items"
+        fi
+    }
+
+    # Function to copy statusline
+    copy_statusline() {
+        if [ ! -f "$SCRIPT_DIR/statusline.sh" ]; then
+            echo -e "${YELLOW}⚠${NC} statusline.sh not found"
+            return
+        fi
+        cp "$SCRIPT_DIR/statusline.sh" "$CLAUDE_DIR/statusline.sh"
+        chmod +x "$CLAUDE_DIR/statusline.sh"
+        echo -e "${GREEN}✓${NC} Installed statusline.sh"
+    }
+
+    # Function to update settings.json by merging toolkit settings
+    copy_settings() {
+        # Check if jq is available
+        if ! command -v jq &> /dev/null; then
+            echo -e "${YELLOW}⚠${NC} jq not found - cannot update settings.json"
+            echo -e "${DIM}   Install jq or manually merge settings${NC}"
+            return
+        fi
+
+        # Check if toolkit settings.json exists
+        if [ ! -f "$SCRIPT_DIR/settings.json" ]; then
+            echo -e "${YELLOW}⚠${NC} Toolkit settings.json not found"
+            return
+        fi
+
+        # Create user settings.json if it doesn't exist
+        if [ ! -f "$CLAUDE_DIR/settings.json" ]; then
+            echo '{}' > "$CLAUDE_DIR/settings.json"
+        fi
+
+        # Backup existing settings
+        cp "$CLAUDE_DIR/settings.json" "$CLAUDE_DIR/settings.json.bak" 2>/dev/null
+
+        # Merge toolkit settings into user settings (user settings take precedence)
+        local temp_file=$(mktemp)
+        jq -s '.[1] * .[0]' "$SCRIPT_DIR/settings.json" "$CLAUDE_DIR/settings.json" > "$temp_file"
+
+        if [ $? -eq 0 ]; then
+            mv "$temp_file" "$CLAUDE_DIR/settings.json"
+            echo -e "${GREEN}✓${NC} Updated settings.json (merged toolkit settings)"
+        else
+            rm -f "$temp_file"
+            echo -e "${RED}✗${NC} Failed to update settings.json"
+        fi
+    }
+
+    echo
+    echo -e "${BLUE}→ Installing toolkit components...${NC}"
+
+    if [[ "$install_choice" == "1" ]]; then
+        # Install all
+        echo -e "${BLUE}Skills:${NC}"
+        copy_skills "all"
+        echo -e "${BLUE}Agents:${NC}"
+        copy_agents "all"
+        echo -e "${BLUE}Commands:${NC}"
+        copy_commands "all"
+        echo -e "${BLUE}Hooks:${NC}"
+        copy_hooks "all"
+        echo -e "${BLUE}Statusline:${NC}"
+        copy_statusline
+        echo -e "${BLUE}Settings:${NC}"
+        echo -n "Merge toolkit settings.json into your settings? (y/n): "
+        read -r response
+        [[ "$response" =~ ^[Yy]$ ]] && copy_settings
+
+    elif [[ "$install_choice" == "2" ]]; then
+        # Select by folder
+        echo
+        echo -e "${BLUE}━━━ Skills ━━━${NC}"
+        echo -n "Copy (${GREEN}a${NC})ll / (${GREEN}o${NC})ne-by-one / (${GREEN}s${NC})kip? "
+        read -r choice
+        [[ "$choice" =~ ^[Aa]$ ]] && copy_skills "all"
+        [[ "$choice" =~ ^[Oo]$ ]] && copy_skills "one-by-one"
+
+        echo
+        echo -e "${BLUE}━━━ Agents ━━━${NC}"
+        echo -n "Copy (${GREEN}a${NC})ll / (${GREEN}o${NC})ne-by-one / (${GREEN}s${NC})kip? "
+        read -r choice
+        [[ "$choice" =~ ^[Aa]$ ]] && copy_agents "all"
+        [[ "$choice" =~ ^[Oo]$ ]] && copy_agents "one-by-one"
+
+        echo
+        echo -e "${BLUE}━━━ Commands ━━━${NC}"
+        echo -n "Copy (${GREEN}a${NC})ll / (${GREEN}o${NC})ne-by-one / (${GREEN}s${NC})kip? "
+        read -r choice
+        [[ "$choice" =~ ^[Aa]$ ]] && copy_commands "all"
+        [[ "$choice" =~ ^[Oo]$ ]] && copy_commands "one-by-one"
+
+        echo
+        echo -e "${BLUE}━━━ Hooks ━━━${NC}"
+        echo -n "Copy (${GREEN}a${NC})ll / (${GREEN}o${NC})ne-by-one / (${GREEN}s${NC})kip? "
+        read -r choice
+        [[ "$choice" =~ ^[Aa]$ ]] && copy_hooks "all"
+        [[ "$choice" =~ ^[Oo]$ ]] && copy_hooks "one-by-one"
+
+        echo
+        echo -e "${BLUE}━━━ Statusline ━━━${NC}"
+        echo -n "Copy statusline.sh? (y/n): "
+        read -r choice
+        [[ "$choice" =~ ^[Yy]$ ]] && copy_statusline
+
+        echo
+        echo -e "${BLUE}━━━ Settings ━━━${NC}"
+        echo -n "Merge toolkit settings.json into your settings? (y/n): "
+        read -r choice
+        [[ "$choice" =~ ^[Yy]$ ]] && copy_settings
     fi
 else
-    # Check if statusline is already configured
-    if ! grep -q "statusLine" "$SETTINGS_FILE"; then
-        echo -e "${YELLOW}⚠${NC} settings.json exists but statusline not configured"
-        echo -e "${DIM}   Add this to enable statusline:${NC}"
-        echo -e "${DIM}   {${NC}"
-        echo -e "${DIM}     \"statusLine\": {${NC}"
-        echo -e "${DIM}       \"type\": \"command\",${NC}"
-        echo -e "${DIM}       \"command\": \"~/.claude/statusline.sh\"${NC}"
-        echo -e "${DIM}     }${NC}"
-        echo -e "${DIM}   }${NC}"
-    else
-        echo -e "${GREEN}✓${NC} Statusline already configured in settings.json"
+    echo -e "${RED}✗${NC} Invalid choice. Exiting."
+    exit 1
+fi
+
+if [[ "$install_choice" != "3" ]]; then
+    echo
+    echo -e "${BLUE}→ Verifying installation...${NC}"
+
+    # Check if statusline is configured
+    if [ -f "$CLAUDE_DIR/settings.json" ] && grep -q "statusLine" "$CLAUDE_DIR/settings.json"; then
+        echo -e "${GREEN}✓${NC} Statusline configured in settings.json"
+    elif [ -f "$CLAUDE_DIR/statusline.sh" ]; then
+        echo -e "${YELLOW}⚠${NC} statusline.sh installed but not configured in settings.json"
+        echo -e "${DIM}   Run the installer again to update settings.json${NC}"
     fi
 fi
 

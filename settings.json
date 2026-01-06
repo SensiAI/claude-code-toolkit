@@ -3,8 +3,5 @@
     "type": "command",
     "command": "~/.claude/statusline.sh",
     "padding": 0
-  },
-  "enabledPlugins": {
-    "playwright@claude-plugins-official": true
   }
 }
